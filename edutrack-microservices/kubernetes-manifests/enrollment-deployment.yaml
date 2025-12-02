@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: enrollment-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: enrollment-service
+  template:
+    metadata:
+      labels:
+        app: enrollment-service
+    spec:
+      containers:
+      - name: enrollment-app
+        image: gcr.io/${PROJECT_ID}/enrollment-service:v1 # <--- CHANGE IMAGE TAG IF NECESSARY
+        ports:
+        - containerPort: 8080
+        env:
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: cloudsql-db-credentials
+              key: username
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: cloudsql-db-credentials
+              key: password
+        - name: DB_HOST
+          value: 127.0.0.1
+        - name: DB_NAME
+          value: edutrack_db
+        - name: DB_PORT
+          value: "5432"
+      - name: cloudsql-proxy
+        image: gcr.io/cloudsql-docker/gce-proxy:1.28.0
+        command: ["/cloud_sql_proxy",
+                  "-instances=${SQL_CONNECTION_NAME}=tcp:5432",
+                  "-credential_file=/secrets/cloudsql/credentials.json"]
+        securityContext:
+          runAsUser: 2 # non-root user
+        volumeMounts:
+        - name: cloudsql-instance-credentials
+          mountPath: /secrets/cloudsql
+          readOnly: true
+      volumes:
+      - name: cloudsql-instance-credentials
+        secret:
+          secretName: cloudsql-instance-credentials
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: edutrack-api-gateway
+spec:
+  type: LoadBalancer # Exposes the service externally
+  selector:
+    app: enrollment-service
+  ports:
+  - port: 80
+    targetPort: 8080
